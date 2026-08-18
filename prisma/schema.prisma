@@ -11,3 +11,144 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum UserType {
+  SUPER_ADMIN
+  COMPANY_OWNER
+  STAFF
+  CUSTOMER
+}
+
+enum StaffRole {
+  IN_STORE_OPERATOR
+  IN_STORE_MANAGER
+  CHEF
+}
+
+model Company {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String
+  restaurants Restaurant[]
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@map("companies")
+}
+
+model Restaurant {
+  id               String            @id @default(uuid()) @db.Uuid
+  companyId        String            @map("company_id") @db.Uuid
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name             String
+  menuItems        MenuItem[]
+  staffAssignments StaffAssignment[]
+  selectedByUsers  User[]
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@map("restaurants")
+}
+
+model User {
+  id                   String               @id @default(uuid()) @db.Uuid
+  email                String               @unique
+  passwordHash         String               @map("password_hash")
+  userType             UserType             @default(CUSTOMER) @map("user_type")
+  emailVerified        Boolean              @default(false) @map("email_verified")
+  selectedRestaurantId String?              @map("selected_restaurant_id") @db.Uuid
+  selectedRestaurant   Restaurant?          @relation(fields: [selectedRestaurantId], references: [id], onDelete: SetNull)
+  otpCode              String?              @map("otp_code")
+  otpExpiresAt         DateTime?            @map("otp_expires_at")
+  staffAssignments     StaffAssignment[]
+  sessions             Session[]
+  passwordResetTokens  PasswordResetToken[]
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+
+  @@index([selectedRestaurantId])
+  @@map("users")
+}
+
+model StaffAssignment {
+  id           String     @id @default(uuid()) @db.Uuid
+  userId       String     @map("user_id") @db.Uuid
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  restaurantId String     @map("restaurant_id") @db.Uuid
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  role         StaffRole
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  @@unique([userId, restaurantId, role])
+  @@index([restaurantId])
+  @@map("staff_assignments")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique @map("token_hash")
+  used      Boolean  @default(false)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model MenuItem {
+  id            String         @id @default(uuid()) @db.Uuid
+  restaurantId  String         @map("restaurant_id") @db.Uuid
+  restaurant    Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  price         Decimal        @db.Decimal(10, 2)
+  variantGroups VariantGroup[]
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  @@index([restaurantId])
+  @@map("menu_items")
+}
+
+model VariantGroup {
+  id             String          @id @default(uuid()) @db.Uuid
+  menuItemId     String          @map("menu_item_id") @db.Uuid
+  menuItem       MenuItem        @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  name           String
+  minSelect      Int             @default(0) @map("min_select")
+  maxSelect      Int             @default(1) @map("max_select")
+  variantOptions VariantOption[]
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  @@index([menuItemId])
+  @@map("variant_groups")
+}
+
+model VariantOption {
+  id             String       @id @default(uuid()) @db.Uuid
+  variantGroupId String       @map("variant_group_id") @db.Uuid
+  variantGroup   VariantGroup @relation(fields: [variantGroupId], references: [id], onDelete: Cascade)
+  name           String
+  priceModifier  Decimal      @default(0) @map("price_modifier") @db.Decimal(10, 2)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@index([variantGroupId])
+  @@map("variant_options")
+}

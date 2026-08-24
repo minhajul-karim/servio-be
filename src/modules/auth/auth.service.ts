@@ -17,6 +17,7 @@
  *   3. create the user:
  *      prisma.user.create({ data: {
  *        email: input.email,
+ *        name: input.name,
  *        passwordHash,
  *        userType: "CUSTOMER",
  *        emailVerified: false,

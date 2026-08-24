@@ -53,6 +53,7 @@ model Restaurant {
 model User {
   id                   String               @id @default(uuid()) @db.Uuid
   email                String               @unique
+  name                 String
   passwordHash         String               @map("password_hash")
   userType             UserType             @default(CUSTOMER) @map("user_type")
   emailVerified        Boolean              @default(false) @map("email_verified")

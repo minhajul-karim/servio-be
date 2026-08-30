@@ -12,7 +12,7 @@ datasource db {
   provider = "postgresql"
 }
 
-enum UserType {
+enum Role {
   SUPER_ADMIN
   COMPANY_OWNER
   STAFF
@@ -55,7 +55,7 @@ model User {
   email                String               @unique
   name                 String
   passwordHash         String               @map("password_hash")
-  userType             UserType             @default(CUSTOMER) @map("user_type")
+  role                 Role                 @default(CUSTOMER) @map("role")
   emailVerified        Boolean              @default(false) @map("email_verified")
   selectedRestaurantId String?              @map("selected_restaurant_id") @db.Uuid
   selectedRestaurant   Restaurant?          @relation(fields: [selectedRestaurantId], references: [id], onDelete: SetNull)

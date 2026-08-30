@@ -5,6 +5,9 @@ const envSchema = z.object({
   DATABASE_URL: z.url(),
   PORT: z.coerce.number().int().positive().default(5000),
   JWT_SECRET: z.string().min(32),
+  FRONTEND_URL: z.url(),
+  GMAIL_USER: z.email(),
+  GMAIL_APP_PASSWORD: z.string(),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -4,7 +4,7 @@ import { AppError } from "../errors/app-error";
 
 export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
   if (err instanceof AppError) {
-    res.status(err.statusCode).json({ message: err.message });
+    res.status(err.statusCode).json({ message: err.message, ...(err.details && { details: err.details }) });
     return;
   }
 

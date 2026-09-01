@@ -7,7 +7,7 @@ export function validate(schema: z.ZodType, source: "body" | "query" | "params" 
     const parsed = schema.safeParse(req[source]);
 
     if (!parsed.success) {
-      next(new AppError(400, JSON.stringify(z.flattenError(parsed.error).fieldErrors)));
+      next(new AppError(400, "Validation failed", z.flattenError(parsed.error).fieldErrors));
       return;
     }
 

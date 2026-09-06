@@ -5,9 +5,8 @@ import { signToken } from "../../common/utils/jwt";
 import { sendMail } from "../../common/utils/mailer";
 import { env } from "../../env";
 
-
 import { generateToken, hashToken } from "../../common/utils/token";
-import { RegisterInput, LoginInput, RefreshInput, LogoutInput } from "./auth.schema";
+import { RegisterInput, LoginInput, RefreshInput, LogoutInput, VerifyEmailInput } from "./auth.schema";
 
 export async function register(input: RegisterInput) {
   const userExist = await prisma.user.findUnique({ where: { email: input.email } });
@@ -53,6 +52,27 @@ async function sendVerificationEmail(userId: string, email: string): Promise<voi
   } catch (err) {
     console.error("Failed to send verification email:", err);
   }
+}
+
+export async function verifyEmail(input: VerifyEmailInput) {
+  const tokenHash = hashToken(input.token);
+  const token = await prisma.emailVerificationToken.findUnique({
+    where: { tokenHash }
+  });
+
+  if (!token || token.expiresAt < new Date()) {
+    throw new AppError(400, "Invalid or expired verification link");
+  }
+
+  await Promise.all([
+    prisma.user.update({
+      where: { id: token.userId },
+      data: { emailVerified: true }
+    }),
+    prisma.emailVerificationToken.delete({
+      where: { id: token.id }
+    })
+  ]);
 }
 
 /**

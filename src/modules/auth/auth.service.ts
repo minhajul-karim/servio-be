@@ -6,7 +6,13 @@ import { sendMail } from "../../common/utils/mailer";
 import { env } from "../../env";
 
 import { generateToken, hashToken } from "../../common/utils/token";
-import { RegisterInput, LoginInput, RefreshInput, LogoutInput, VerifyEmailInput } from "./auth.schema";
+import {
+  RegisterInput,
+  LoginInput,
+  RefreshInput,
+  LogoutInput,
+  VerifyEmailInput,
+} from "./auth.schema";
 
 export async function register(input: RegisterInput) {
   const userExist = await prisma.user.findUnique({ where: { email: input.email } });
@@ -22,7 +28,7 @@ export async function register(input: RegisterInput) {
       name: input.name,
       role: "CUSTOMER",
       emailVerified: false,
-    }
+    },
   });
 
   await sendVerificationEmail(user.id, user.email);
@@ -39,7 +45,7 @@ async function sendVerificationEmail(userId: string, email: string): Promise<voi
       userId,
       tokenHash,
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-    }
+    },
   });
   const verificationLink = `${env.FRONTEND_URL}/verify-email?token=${rawToken}`;
 
@@ -47,7 +53,7 @@ async function sendVerificationEmail(userId: string, email: string): Promise<voi
     await sendMail(
       email,
       "Verify your email",
-      `<p>Click the link below to verify your account:</p><p><a href="${verificationLink}">${verificationLink}</a></p><p>This link expires in 24 hours.</p>`
+      `<p>Click the link below to verify your account:</p><p><a href="${verificationLink}">${verificationLink}</a></p><p>This link expires in 24 hours.</p>`,
     );
   } catch (err) {
     console.error("Failed to send verification email:", err);
@@ -57,7 +63,7 @@ async function sendVerificationEmail(userId: string, email: string): Promise<voi
 export async function verifyEmail(input: VerifyEmailInput) {
   const tokenHash = hashToken(input.token);
   const token = await prisma.emailVerificationToken.findUnique({
-    where: { tokenHash }
+    where: { tokenHash },
   });
 
   if (!token || token.expiresAt < new Date()) {
@@ -67,11 +73,11 @@ export async function verifyEmail(input: VerifyEmailInput) {
   await Promise.all([
     prisma.user.update({
       where: { id: token.userId },
-      data: { emailVerified: true }
+      data: { emailVerified: true },
     }),
     prisma.emailVerificationToken.delete({
-      where: { id: token.id }
-    })
+      where: { id: token.id },
+    }),
   ]);
 }
 

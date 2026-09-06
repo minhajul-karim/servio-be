@@ -1,7 +1,7 @@
 import express from "express";
 import authRoutes from "./modules/auth/auth.routes";
 import { notFoundHandler } from "./common/middlewares/not-found";
-import { errorHandler } from "./common/middlewares/error-handler"
+import { errorHandler } from "./common/middlewares/error-handler";
 
 const app = express();
 

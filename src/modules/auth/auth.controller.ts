@@ -7,8 +7,12 @@ export async function register(req: Request<{}, {}, RegisterInput>, res: Respons
   res.status(201).json({ ...user, passwordHash: undefined });
 }
 
-export async function verify(req: Request<{}, {}, {}, VerifyEmailInput>, res: Response): Promise<void> {
+export async function verify(
+  req: Request<{}, {}, {}, VerifyEmailInput>,
+  res: Response,
+): Promise<void> {
   await authService.verifyEmail(req.query);
+  console.log("hi");
   res.status(200).json({ success: true });
 }
 

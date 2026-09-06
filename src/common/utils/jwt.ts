@@ -4,8 +4,8 @@ import { Role } from "../../generated/prisma/enums";
 
 export function signToken(payload: { userId: string; role: Role }): string {
   return jwt.sign(payload, env.JWT_SECRET, {
-    algorithm: 'HS256',
-    expiresIn: '15m'
+    algorithm: "HS256",
+    expiresIn: "15m",
   });
 }
 

@@ -6,7 +6,7 @@ import * as authController from "./auth.controller";
 const router = Router();
 
 router.post("/register", validate(registerSchema), authController.register);
-router.get("/verify-email", authController.verify)
+router.get("/verify-email", authController.verify);
 
 /**
  * TODO: add once auth.controller.ts implements them:

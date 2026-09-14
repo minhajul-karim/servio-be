@@ -112,6 +112,39 @@ export async function login(input: LoginInput) {
   return { accessToken, refreshToken };
 }
 
+export async function refresh(input: RefreshInput) {
+  const tokenHashInput = hashToken(input.refreshToken);
+  const session = await prisma.session.findUnique({
+    where: { tokenHash: tokenHashInput },
+    include: { user: true }
+  });
+
+  if (!session || session.expiresAt < new Date()) {
+    throw new AppError(401, "Invalid or expired refresh token");
+  }
+
+  await prisma.session.delete({ where: { id: session.id } });
+
+  const accessToken = signToken({ userId: session.user.id, role: session.user.role });
+  const refreshToken = generateToken();
+  const tokenHash = hashToken(refreshToken);
+  const durationMs = session.expiresAt.getTime() - session.createdAt.getTime();
+  const expiresAt = new Date(Date.now() + durationMs);
+
+  await prisma.session.create({
+    data: {
+      userId: session.user.id,
+      tokenHash,
+      expiresAt,
+    },
+  });
+
+  return {
+    accessToken,
+    refreshToken,
+  }
+}
+
 /**
  * TODO: implement auth business logic.
  *

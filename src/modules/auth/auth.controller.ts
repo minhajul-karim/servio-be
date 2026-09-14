@@ -1,10 +1,15 @@
 import { Request, Response } from "express";
 import * as authService from "./auth.service";
-import { RegisterInput, VerifyEmailInput } from "./auth.schema";
+import { RegisterInput, LoginInput, VerifyEmailInput } from "./auth.schema";
 
 export async function register(req: Request<{}, {}, RegisterInput>, res: Response): Promise<void> {
   const user = await authService.register(req.body);
   res.status(201).json({ ...user, passwordHash: undefined });
+}
+
+export async function login(req: Request<{}, {}, LoginInput>, res: Response): Promise<void> {
+  const { accessToken, refreshToken } = await authService.login(req.body);
+  res.status(200).json({ accessToken, refreshToken });
 }
 
 export async function verify(
@@ -12,16 +17,11 @@ export async function verify(
   res: Response,
 ): Promise<void> {
   await authService.verifyEmail(req.query);
-  console.log("hi");
   res.status(200).json({ success: true });
 }
 
 /**
- * TODO: implement login, refresh, logout.
- *
- * login(req, res, next):
- *   const { accessToken, refreshToken } = await authService.login(req.body);
- *   res.status(200).json({ accessToken, refreshToken });
+ * TODO: implement refresh, logout.
  *
  * refresh(req, res, next):
  *   const { accessToken, refreshToken } = await authService.refresh(req.body);

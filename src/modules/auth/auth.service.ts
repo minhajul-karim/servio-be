@@ -81,6 +81,37 @@ export async function verifyEmail(input: VerifyEmailInput) {
   ]);
 }
 
+const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
+const THIRTY_DAYS_IN_MS = 30 * ONE_DAY_IN_MS;
+
+export async function login(input: LoginInput) {
+  const user = await prisma.user.findUnique({ where: { email: input.email } });
+  if (!user) {
+    throw new AppError(401, "Invalid email or password");
+  }
+
+  const isPasswordValid = await comparePassword(input.password, user.passwordHash);
+  if (!isPasswordValid) {
+    throw new AppError(401, "Invalid email or password");
+  }
+
+  const accessToken = signToken({ userId: user.id, role: user.role });
+
+  const refreshToken = generateToken();
+  const tokenHash = hashToken(refreshToken);
+  const expiresAt = new Date(Date.now() + (input.rememberMe ? THIRTY_DAYS_IN_MS : ONE_DAY_IN_MS));
+
+  await prisma.session.create({
+    data: {
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+    },
+  });
+
+  return { accessToken, refreshToken };
+}
+
 /**
  * TODO: implement auth business logic.
  *
@@ -89,52 +120,6 @@ export async function verifyEmail(input: VerifyEmailInput) {
  * req/res, so it's easy to reason about (and later, test) without spinning
  * up an HTTP request. The controller's job is just to call these functions
  * and shape the response; this file's job is the real work.
- *
- * register(input: RegisterInput):
- *   1. look up an existing user by email:
- *      prisma.user.findUnique({ where: { email: input.email } })
- *      - if found, throw new AppError(409, "Email already in use")
- *   2. hash the password:
- *      const passwordHash = await hashPassword(input.password)
- *      (from common/utils/password.ts)
- *   3. create the user:
- *      prisma.user.create({ data: {
- *        email: input.email,
- *        name: input.name,
- *        passwordHash,
- *        role: "CUSTOMER",
- *        emailVerified: false,
- *      }})
- *   4. return the created user
- *   Decide here (and document your choice) whether this function returns
- *   the raw Prisma result including passwordHash, or strips it before
- *   returning — either way, passwordHash must never reach the HTTP
- *   response, so the stripping has to happen somewhere between here and
- *   auth.controller.ts.
- *   Not in scope yet: OTP generation/sending — register just creates the
- *   row for now.
- *
- * login(input: LoginInput):
- *   1. find the user by email:
- *      prisma.user.findUnique({ where: { email: input.email } })
- *      - if not found, throw new AppError(401, "Invalid email or password")
- *   2. verify the password:
- *      const ok = await comparePassword(input.password, user.passwordHash)
- *      - if false, throw the SAME AppError(401, "Invalid email or password")
- *        as step 1 — deliberately identical wording either way, so a caller
- *        can't tell "wrong email" from "wrong password" by the error message
- *   3. mint the access token:
- *      const accessToken = signToken({ userId: user.id, role: user.role })
- *      (from common/utils/jwt.ts)
- *   4. mint the refresh token:
- *      const refreshToken = generateToken()
- *      const tokenHash = hashToken(refreshToken)
- *      (both from common/utils/token.ts)
- *      const expiresAt = input.rememberMe
- *        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)   // 30 days
- *        : new Date(Date.now() + 24 * 60 * 60 * 1000)         // 1 day
- *      await prisma.session.create({ data: { userId: user.id, tokenHash, expiresAt } })
- *   5. return { accessToken, refreshToken }
  *
  * refresh(input: RefreshInput):
  *   1. hash the incoming token: const tokenHash = hashToken(input.refreshToken)

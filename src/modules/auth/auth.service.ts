@@ -116,7 +116,7 @@ export async function refresh(input: RefreshInput) {
   const tokenHashInput = hashToken(input.refreshToken);
   const session = await prisma.session.findUnique({
     where: { tokenHash: tokenHashInput },
-    include: { user: true }
+    include: { user: true },
   });
 
   if (!session || session.expiresAt < new Date()) {
@@ -142,47 +142,10 @@ export async function refresh(input: RefreshInput) {
   return {
     accessToken,
     refreshToken,
-  }
+  };
 }
 
-/**
- * TODO: implement auth business logic.
- *
- * Purpose: this is where the actual "what does registering/logging in/
- * refreshing/logging out mean" logic lives — independent of Express
- * req/res, so it's easy to reason about (and later, test) without spinning
- * up an HTTP request. The controller's job is just to call these functions
- * and shape the response; this file's job is the real work.
- *
- * refresh(input: RefreshInput):
- *   1. hash the incoming token: const tokenHash = hashToken(input.refreshToken)
- *   2. look up the session, pulling the related user along with it:
- *      const session = await prisma.session.findUnique({
- *        where: { tokenHash },
- *        include: { user: true },
- *      })
- *      (the include is what gives you role for the new access token,
- *      without a second query)
- *   3. if !session or session.expiresAt < new Date(), throw
- *      new AppError(401, "Invalid or expired refresh token")
- *   4. rotate: delete the old session row —
- *      await prisma.session.delete({ where: { id: session.id } })
- *   5. mint a brand-new access token AND a brand-new refresh token, exactly
- *      like steps 3-4 of login() above (reuse session.user.id / .role,
- *      and session.expiresAt to preserve the original rememberMe duration
- *      rather than resetting it — your call whether to preserve or reset it,
- *      just be deliberate about it)
- *   6. return { accessToken, refreshToken } (the NEW pair)
- *
- * logout(input: RefreshInput or a dedicated LogoutInput — see auth.schema.ts):
- *   1. hash the incoming token: const tokenHash = hashToken(input.refreshToken)
- *   2. await prisma.session.deleteMany({ where: { tokenHash } })
- *      deleteMany (not delete) on purpose — logging out twice, or with an
- *      already-expired/already-rotated token, should just no-op rather than
- *      throw a "not found" error
- *   3. nothing meaningful to return — the controller can just send a 204 or
- *      a simple { success: true }
- *
- * You'll need the Prisma client — import it from common/prisma.ts (the
- * shared singleton), not a new PrismaClient() in this file.
- */
+export async function logout(input: LogoutInput) {
+  const tokenHash = hashToken(input.refreshToken);
+  await prisma.session.deleteMany({ where: { tokenHash } });
+}

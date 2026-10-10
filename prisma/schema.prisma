@@ -61,6 +61,7 @@ model User {
   selectedRestaurant      Restaurant?              @relation(fields: [selectedRestaurantId], references: [id], onDelete: SetNull)
   otpCode                 String?                  @map("otp_code")
   otpExpiresAt            DateTime?                @map("otp_expires_at")
+  otpAttempts             Int                      @default(0) @map("otp_attempts")
   staffAssignments        StaffAssignment[]
   sessions                Session[]
   passwordResetTokens     PasswordResetToken[]

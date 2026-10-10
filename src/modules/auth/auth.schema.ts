@@ -16,6 +16,14 @@ export const loginSchema = z.object({
 
 export type LoginInput = z.infer<typeof loginSchema>;
 
+export const verifyOtpSchema = z.object({
+  email: z.email(),
+  otp: z.string().regex(/^\d{6}$/),
+  rememberMe: z.boolean().optional().default(false),
+});
+
+export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>;
+
 export const refreshSchema = z.object({
   refreshToken: z.string(),
 });

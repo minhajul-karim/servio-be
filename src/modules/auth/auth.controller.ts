@@ -6,6 +6,7 @@ import {
   RefreshInput,
   LogoutInput,
   VerifyEmailInput,
+  VerifyOtpInput,
 } from "./auth.schema";
 
 export async function register(req: Request<{}, {}, RegisterInput>, res: Response): Promise<void> {
@@ -14,7 +15,12 @@ export async function register(req: Request<{}, {}, RegisterInput>, res: Respons
 }
 
 export async function login(req: Request<{}, {}, LoginInput>, res: Response): Promise<void> {
-  const { accessToken, refreshToken } = await authService.login(req.body);
+  const result = await authService.login(req.body);
+  res.status(200).json(result);
+}
+
+export async function verifyOtp(req: Request<{}, {}, VerifyOtpInput>, res: Response): Promise<void> {
+  const { accessToken, refreshToken } = await authService.verifyOtp(req.body);
   res.status(200).json({ accessToken, refreshToken });
 }
 

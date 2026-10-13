@@ -14,6 +14,8 @@ import {
   LogoutInput,
   VerifyEmailInput,
   VerifyOtpInput,
+  ForgotPasswordInput,
+  ResetPasswordInput,
 } from "./auth.schema";
 
 export async function register(input: RegisterInput) {
@@ -85,6 +87,8 @@ export async function verifyEmail(input: VerifyEmailInput) {
 
 const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
 const THIRTY_DAYS_IN_MS = 30 * ONE_DAY_IN_MS;
+
+const PASSWORD_RESET_EXPIRY_IN_MS = 60 * 60 * 1000;
 
 const OTP_EXPIRY_IN_MS = 10 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
@@ -211,4 +215,61 @@ export async function refresh(input: RefreshInput) {
 export async function logout(input: LogoutInput) {
   const tokenHash = hashToken(input.refreshToken);
   await prisma.session.deleteMany({ where: { tokenHash } });
+}
+
+export async function forgotPassword(input: ForgotPasswordInput): Promise<void> {
+  const user = await prisma.user.findUnique({ where: { email: input.email } });
+  if (!user) {
+    return;
+  }
+
+  await prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
+  const rawToken = generateToken();
+  await prisma.passwordResetToken.create({
+    data: {
+      userId: user.id,
+      tokenHash: hashToken(rawToken),
+      expiresAt: new Date(Date.now() + PASSWORD_RESET_EXPIRY_IN_MS),
+    },
+  });
+
+  const resetLink = `${env.FRONTEND_URL}/reset-password?token=${rawToken}`;
+
+  try {
+    await sendMail(
+      user.email,
+      "Reset your password",
+      `<p>Click the link below to reset your password:</p><p><a href="${resetLink}">${resetLink}</a></p><p>This link expires in 1 hour. If you didn't request this, you can ignore this email.</p>`,
+    );
+  } catch (err) {
+    console.error("Failed to send password reset email:", err);
+  }
+}
+
+export async function resetPassword(input: ResetPasswordInput): Promise<void> {
+  const resetToken = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash: hashToken(input.token) },
+  });
+
+  if (!resetToken || resetToken.expiresAt < new Date()) {
+    throw new AppError(400, "Invalid or expired reset link");
+  }
+
+  const passwordHash = await hashPassword(input.password);
+
+  await prisma.$transaction(async (tx) => {
+    const claimed = await tx.passwordResetToken.deleteMany({
+      where: { id: resetToken.id },
+    });
+
+    if (claimed.count === 0) {
+      throw new AppError(400, "Invalid or expired reset link");
+    }
+
+    await tx.user.update({
+      where: { id: resetToken.userId },
+      data: { passwordHash, otpCode: null, otpExpiresAt: null, otpAttempts: 0 },
+    });
+    await tx.session.deleteMany({ where: { userId: resetToken.userId } });
+  });
 }

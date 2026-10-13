@@ -6,6 +6,8 @@ import {
   verifyOtpSchema,
   refreshSchema,
   logoutSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 } from "./auth.schema";
 import * as authController from "./auth.controller";
 
@@ -17,5 +19,7 @@ router.post("/verify-otp", validate(verifyOtpSchema), authController.verifyOtp);
 router.get("/verify-email", authController.verify);
 router.post("/refresh", validate(refreshSchema), authController.refresh);
 router.post("/logout", validate(logoutSchema), authController.logout);
+router.post("/forgot-password", validate(forgotPasswordSchema), authController.forgotPassword);
+router.post("/reset-password", validate(resetPasswordSchema), authController.resetPassword);
 
 export default router;

@@ -11,7 +11,12 @@ export function validate(schema: z.ZodType, source: "body" | "query" | "params" 
       return;
     }
 
-    req[source] = parsed.data;
+    Object.defineProperty(req, source, {
+      value: parsed.data,
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
     next();
   };
 }

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { validate } from "../../common/middlewares/validate";
+import { requireAuth } from "../../common/middlewares/require-auth";
 import {
   registerSchema,
   loginSchema,
@@ -30,5 +31,6 @@ router.post("/refresh", validate(refreshSchema), authController.refresh);
 router.post("/logout", validate(logoutSchema), authController.logout);
 router.post("/forgot-password", validate(forgotPasswordSchema), authController.forgotPassword);
 router.post("/reset-password", validate(resetPasswordSchema), authController.resetPassword);
+router.get("/me", requireAuth, authController.me);
 
 export default router;

@@ -20,6 +20,25 @@ import {
   ResetPasswordInput,
 } from "./auth.schema";
 
+const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
+const THIRTY_DAYS_IN_MS = 30 * ONE_DAY_IN_MS;
+
+const PASSWORD_RESET_EXPIRY_IN_MS = 60 * 60 * 1000;
+
+const OTP_EXPIRY_IN_MS = 10 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
+const RESEND_COOLDOWN_IN_MS = 60 * 1000;
+const RESEND_COOLDOWN_IN_SECONDS = RESEND_COOLDOWN_IN_MS / 1000;
+
+const publicUserSelect = {
+  id: true,
+  email: true,
+  name: true,
+  role: true,
+  emailVerified: true,
+  selectedRestaurantId: true,
+} as const;
+
 export async function register(input: RegisterInput) {
   const userExist = await prisma.user.findUnique({ where: { email: input.email } });
   if (userExist) {
@@ -35,6 +54,7 @@ export async function register(input: RegisterInput) {
       role: "CUSTOMER",
       emailVerified: false,
     },
+    select: publicUserSelect,
   });
 
   await sendVerificationEmail(user.id, user.email);
@@ -50,7 +70,7 @@ async function sendVerificationEmail(userId: string, email: string): Promise<voi
     data: {
       userId,
       tokenHash,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      expiresAt: new Date(Date.now() + ONE_DAY_IN_MS),
     },
   });
   const verificationLink = `${env.FRONTEND_URL}/verify-email?token=${rawToken}`;
@@ -86,16 +106,6 @@ export async function verifyEmail(input: VerifyEmailInput) {
     }),
   ]);
 }
-
-const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
-const THIRTY_DAYS_IN_MS = 30 * ONE_DAY_IN_MS;
-
-const PASSWORD_RESET_EXPIRY_IN_MS = 60 * 60 * 1000;
-
-const OTP_EXPIRY_IN_MS = 10 * 60 * 1000;
-const OTP_MAX_ATTEMPTS = 5;
-const RESEND_COOLDOWN_IN_MS = 60 * 1000;
-const RESEND_COOLDOWN_IN_SECONDS = RESEND_COOLDOWN_IN_MS / 1000;
 
 async function createSession(userId: string, role: Role, rememberMe: boolean) {
   const accessToken = signToken({ userId, role });
@@ -321,4 +331,12 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
     });
     await tx.session.deleteMany({ where: { userId: resetToken.userId } });
   });
+}
+
+export async function getMe(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: publicUserSelect });
+  if (!user) {
+    throw new AppError(401, "User not found");
+  }
+  return user;
 }

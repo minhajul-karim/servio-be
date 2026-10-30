@@ -24,6 +24,10 @@ export const verifyOtpSchema = z.object({
 
 export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>;
 
+export const resendOtpSchema = z.object({ email: z.email() });
+
+export type ResendOtpInput = z.infer<typeof resendOtpSchema>;
+
 export const forgotPasswordSchema = z.object({
   email: z.email(),
 });
@@ -50,3 +54,7 @@ export type LogoutInput = z.infer<typeof logoutSchema>;
 export const verifyEmailSchema = z.object({ token: z.string() });
 
 export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
+
+export const resendVerificationSchema = z.object({ email: z.email() });
+
+export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;

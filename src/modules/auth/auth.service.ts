@@ -14,6 +14,8 @@ import {
   LogoutInput,
   VerifyEmailInput,
   VerifyOtpInput,
+  ResendOtpInput,
+  ResendVerificationInput,
   ForgotPasswordInput,
   ResetPasswordInput,
 } from "./auth.schema";
@@ -92,6 +94,8 @@ const PASSWORD_RESET_EXPIRY_IN_MS = 60 * 60 * 1000;
 
 const OTP_EXPIRY_IN_MS = 10 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
+const RESEND_COOLDOWN_IN_MS = 60 * 1000;
+const RESEND_COOLDOWN_IN_SECONDS = RESEND_COOLDOWN_IN_MS / 1000;
 
 async function createSession(userId: string, role: Role, rememberMe: boolean) {
   const accessToken = signToken({ userId, role });
@@ -126,14 +130,14 @@ async function verifyCredentials(email: string, password: string) {
   return user;
 }
 
-async function issueLoginOtp(userId: string, email: string): Promise<void> {
+async function issueLoginOtp(userId: string, email: string, resetAttempts: boolean): Promise<void> {
   const otp = generateOtp();
   await prisma.user.update({
     where: { id: userId },
     data: {
       otpCode: hashToken(otp),
       otpExpiresAt: new Date(Date.now() + OTP_EXPIRY_IN_MS),
-      otpAttempts: 0,
+      ...(resetAttempts && { otpAttempts: 0 }),
     },
   });
 
@@ -146,8 +150,53 @@ async function issueLoginOtp(userId: string, email: string): Promise<void> {
 
 export async function login(input: LoginInput) {
   const user = await verifyCredentials(input.email, input.password);
-  await issueLoginOtp(user.id, user.email);
-  return { otpRequired: true };
+  if (!user.emailVerified) {
+    throw new AppError(
+      403,
+      "Please verify your email before logging in",
+      undefined,
+      "EMAIL_NOT_VERIFIED",
+    );
+  }
+
+  await issueLoginOtp(user.id, user.email, true);
+  return { otpRequired: true, resendAfterSeconds: RESEND_COOLDOWN_IN_SECONDS };
+}
+
+export async function resendOtp(input: ResendOtpInput) {
+  const user = await prisma.user.findUnique({ where: { email: input.email } });
+  if (!user || !user.otpCode || !user.otpExpiresAt) {
+    throw new AppError(400, "No pending login. Please log in again");
+  }
+
+  const otpSentAt = user.otpExpiresAt.getTime() - OTP_EXPIRY_IN_MS;
+  const isCooldownActive = Date.now() - otpSentAt < RESEND_COOLDOWN_IN_MS;
+  if (isCooldownActive) {
+    throw new AppError(429, "Please wait before requesting a new code");
+  }
+
+  // attempts are not reset, otherwise resending would allow unlimited guesses without the password
+  await issueLoginOtp(user.id, user.email, false);
+  return { resendAfterSeconds: RESEND_COOLDOWN_IN_SECONDS };
+}
+
+export async function resendVerificationEmail(input: ResendVerificationInput) {
+  const user = await prisma.user.findUnique({ where: { email: input.email } });
+  if (user && !user.emailVerified) {
+    const latestVerificationToken = await prisma.emailVerificationToken.findFirst({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+    });
+    const verificationEmailSentAt = latestVerificationToken?.createdAt.getTime();
+    const isCooldownActive =
+      verificationEmailSentAt !== undefined &&
+      Date.now() - verificationEmailSentAt < RESEND_COOLDOWN_IN_MS;
+    if (!isCooldownActive) {
+      await sendVerificationEmail(user.id, user.email);
+    }
+  }
+
+  return { resendAfterSeconds: RESEND_COOLDOWN_IN_SECONDS };
 }
 
 export async function verifyOtp(input: VerifyOtpInput) {

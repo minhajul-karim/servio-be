@@ -18,6 +18,7 @@ import {
   ResendVerificationInput,
   ForgotPasswordInput,
   ResetPasswordInput,
+  ChangePasswordInput,
 } from "./auth.schema";
 
 const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -332,6 +333,45 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
       data: { passwordHash, ...CLEARED_OTP_FIELDS },
     });
     await tx.session.deleteMany({ where: { userId: resetToken.userId } });
+  });
+}
+
+export async function changePassword(userId: string, input: ChangePasswordInput): Promise<void> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new AppError(401, "User not found");
+  }
+
+  const isCurrentPasswordValid = await comparePassword(input.currentPassword, user.passwordHash);
+  if (!isCurrentPasswordValid) {
+    throw new AppError(400, "Current password is incorrect", undefined, "INVALID_CURRENT_PASSWORD");
+  }
+
+  const isSamePassword = await comparePassword(input.newPassword, user.passwordHash);
+  if (isSamePassword) {
+    throw new AppError(
+      400,
+      "New password must be different from the current one",
+      undefined,
+      "SAME_PASSWORD",
+    );
+  }
+
+  const session = await prisma.session.findUnique({
+    where: { tokenHash: hashToken(input.refreshToken) },
+  });
+  if (!session || session.userId !== userId || session.expiresAt < new Date()) {
+    throw new AppError(400, "Invalid refresh token", undefined, "INVALID_REFRESH_TOKEN");
+  }
+
+  const passwordHash = await hashPassword(input.newPassword);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: userId },
+      data: { passwordHash, ...CLEARED_OTP_FIELDS },
+    });
+    await tx.session.deleteMany({ where: { userId, id: { not: session.id } } });
   });
 }
 

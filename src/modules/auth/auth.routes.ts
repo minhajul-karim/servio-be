@@ -10,6 +10,7 @@ import {
   logoutSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  changePasswordSchema,
   verifyEmailSchema,
   resendVerificationSchema,
 } from "./auth.schema";
@@ -54,6 +55,13 @@ router.post(
   authController.forgotPassword,
 );
 router.post("/reset-password", validate(resetPasswordSchema), authController.resetPassword);
+router.post(
+  "/change-password",
+  requireAuth,
+  loginBruteForceLimiter,
+  validate(changePasswordSchema),
+  authController.changePassword,
+);
 router.get("/me", requireAuth, authController.me);
 
 export default router;

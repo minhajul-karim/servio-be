@@ -30,6 +30,8 @@ const OTP_MAX_ATTEMPTS = 5;
 const RESEND_COOLDOWN_IN_MS = 60 * 1000;
 const RESEND_COOLDOWN_IN_SECONDS = RESEND_COOLDOWN_IN_MS / 1000;
 
+const CLEARED_OTP_FIELDS = { otpCode: null, otpExpiresAt: null, otpAttempts: 0 } as const;
+
 const publicUserSelect = {
   id: true,
   email: true,
@@ -122,7 +124,7 @@ async function createSession(userId: string, role: Role, rememberMe: boolean) {
 function clearOtp(userId: string) {
   return prisma.user.update({
     where: { id: userId },
-    data: { otpCode: null, otpExpiresAt: null, otpAttempts: 0 },
+    data: CLEARED_OTP_FIELDS,
   });
 }
 
@@ -327,7 +329,7 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
 
     await tx.user.update({
       where: { id: resetToken.userId },
-      data: { passwordHash, otpCode: null, otpExpiresAt: null, otpAttempts: 0 },
+      data: { passwordHash, ...CLEARED_OTP_FIELDS },
     });
     await tx.session.deleteMany({ where: { userId: resetToken.userId } });
   });

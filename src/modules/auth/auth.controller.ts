@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { BodyRequest, QueryRequest } from "../../common/types/request";
 import { AppError } from "../../common/errors/app-error";
 import * as authService from "./auth.service";
 import {
@@ -15,42 +16,33 @@ import {
   ChangePasswordInput,
 } from "./auth.schema";
 
-export async function register(req: Request<{}, {}, RegisterInput>, res: Response): Promise<void> {
+export async function register(req: BodyRequest<RegisterInput>, res: Response): Promise<void> {
   const user = await authService.register(req.body);
   res.status(201).json(user);
 }
 
-export async function login(req: Request<{}, {}, LoginInput>, res: Response): Promise<void> {
+export async function login(req: BodyRequest<LoginInput>, res: Response): Promise<void> {
   const result = await authService.login(req.body);
   res.status(200).json(result);
 }
 
-export async function resendOtp(
-  req: Request<{}, {}, ResendOtpInput>,
-  res: Response,
-): Promise<void> {
+export async function resendOtp(req: BodyRequest<ResendOtpInput>, res: Response): Promise<void> {
   const result = await authService.resendOtp(req.body);
   res.status(200).json(result);
 }
 
-export async function verifyOtp(
-  req: Request<{}, {}, VerifyOtpInput>,
-  res: Response,
-): Promise<void> {
+export async function verifyOtp(req: BodyRequest<VerifyOtpInput>, res: Response): Promise<void> {
   const { accessToken, refreshToken } = await authService.verifyOtp(req.body);
   res.status(200).json({ accessToken, refreshToken });
 }
 
-export async function verify(
-  req: Request<{}, {}, {}, VerifyEmailInput>,
-  res: Response,
-): Promise<void> {
+export async function verify(req: QueryRequest<VerifyEmailInput>, res: Response): Promise<void> {
   await authService.verifyEmail(req.query);
   res.status(200).json({ success: true });
 }
 
 export async function resendVerificationEmail(
-  req: Request<{}, {}, ResendVerificationInput>,
+  req: BodyRequest<ResendVerificationInput>,
   res: Response,
 ): Promise<void> {
   const result = await authService.resendVerificationEmail(req.body);
@@ -60,18 +52,18 @@ export async function resendVerificationEmail(
   });
 }
 
-export async function refresh(req: Request<{}, {}, RefreshInput>, res: Response): Promise<void> {
+export async function refresh(req: BodyRequest<RefreshInput>, res: Response): Promise<void> {
   const { accessToken, refreshToken } = await authService.refresh(req.body);
   res.status(200).json({ accessToken, refreshToken });
 }
 
-export async function logout(req: Request<{}, {}, LogoutInput>, res: Response): Promise<void> {
+export async function logout(req: BodyRequest<LogoutInput>, res: Response): Promise<void> {
   await authService.logout(req.body);
   res.status(204).send();
 }
 
 export async function forgotPassword(
-  req: Request<{}, {}, ForgotPasswordInput>,
+  req: BodyRequest<ForgotPasswordInput>,
   res: Response,
 ): Promise<void> {
   await authService.forgotPassword(req.body);
@@ -81,7 +73,7 @@ export async function forgotPassword(
 }
 
 export async function resetPassword(
-  req: Request<{}, {}, ResetPasswordInput>,
+  req: BodyRequest<ResetPasswordInput>,
   res: Response,
 ): Promise<void> {
   await authService.resetPassword(req.body);
@@ -89,7 +81,7 @@ export async function resetPassword(
 }
 
 export async function changePassword(
-  req: Request<{}, {}, ChangePasswordInput>,
+  req: BodyRequest<ChangePasswordInput>,
   res: Response,
 ): Promise<void> {
   if (!req.user) {

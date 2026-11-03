@@ -2,8 +2,11 @@ import express from "express";
 import authRoutes from "./modules/auth/auth.routes";
 import { notFoundHandler } from "./common/middlewares/not-found";
 import { errorHandler } from "./common/middlewares/error-handler";
+import { env } from "./env";
 
 const app = express();
+
+app.set("trust proxy", env.TRUST_PROXY);
 
 app.use(express.json());
 

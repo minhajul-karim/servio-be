@@ -4,6 +4,7 @@ import { z } from "zod";
 const envSchema = z.object({
   DATABASE_URL: z.url(),
   PORT: z.coerce.number().int().positive().default(5000),
+  TRUST_PROXY: z.coerce.number().int().min(0).default(0),
   JWT_SECRET: z.string().min(32),
   FRONTEND_URL: z.url(),
   GMAIL_USER: z.email(),

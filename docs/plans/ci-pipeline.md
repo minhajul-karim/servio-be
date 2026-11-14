@@ -90,4 +90,5 @@ Reference: the TopsPizza FE GitLab pipeline puts all blocking checks (tsc, lint,
 | 2c | Node version source | `.nvmrc` read by CI via `node-version-file` (not `engines` only, not hardcoded in CI) |
 | 2d | Dependency updates | Dependabot security updates only, no `dependabot.yml` version updates (not grouped weekly, not ungrouped weekly) |
 | 2e | Who runs GitHub steps | Claude via `gh` (push, PR, ruleset via API, Dependabot, gate test). User only merges |
+| 2f | Job naming | Job id `quality-gate`, display name "Lint, typecheck, build & test" (ruleset requires the display name). Future deploy job: `deploy`, `needs: quality-gate`, `main` only (rejected: `ci`, `checks`, `verify`, step-list names) |
 | 3 | Up to date with `main` | Required (not optional, not merge queue) |

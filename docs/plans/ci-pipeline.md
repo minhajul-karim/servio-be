@@ -1,6 +1,6 @@
 # CI pipeline plan
 
-Status: approved, in progress (2026-11-14). All GitHub steps are done by Claude via the authenticated `gh` CLI.
+Status: done (2026-11-14). Pipeline green on push + PR, ruleset "Protect main" active (verified: failing PR #2 was BLOCKED), Dependabot on. Remaining: user merges PR #1.
 
 Goal: every push to any branch runs the pipeline, every pull request runs it too, and a PR into `main` can't be merged while the pipeline is red.
 

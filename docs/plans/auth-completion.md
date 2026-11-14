@@ -1,6 +1,6 @@
 # Auth module completion plan
 
-Status: proposed, awaiting approval (2026-11-01)
+Status: done (2026-11-13). All four sections implemented; 63 API tests green.
 
 Four pieces of work, in this order:
 
@@ -118,20 +118,33 @@ Steps (implementer): `TRUST_PROXY` in `env.ts` + `app.set`, `cors` with `FRONTEN
 **Pick A.** Least setup for TypeScript and easy mocking. Jest needs config, and `node:test` is weak at mocking.
 
 ### Test setup
-- **Test database:** a separate `servio_test` database in the same Postgres container. `.env.test` points at it. Migrations run before the tests (`prisma migrate deploy`), and tables are emptied between tests.
-- **Email:** the mailer module is replaced by a fake that records messages, so tests can read OTP codes and verification/reset links. No real emails are sent.
-- **Rate limiters:** their memory store is reset before each test, so one test's attempts don't block the next.
+- **Test database:** a separate `servio_test` database in the same Postgres container. `.env.test` points at it. Migrations run before the tests (`prisma migrate deploy`). Before each test, one `TRUNCATE ... RESTART IDENTITY CASCADE` empties every table listed in `pg_tables` (except `_prisma_migrations`), so new models are covered automatically.
+- **Dev DB safety:** `vitest.config.ts` loads `.env.test` before any app code (dotenv never overrides vars already set, so `.env` can't win). Global setup aborts unless the DB name ends in `_test`.
+- **Test DB creation:** global setup creates `servio_test` if it's missing (via the `postgres` maintenance DB), then runs migrations. No manual step.
+- **File parallelism:** off (`fileParallelism: false`). All files share one test DB, so parallel files would empty each other's tables.
+- **Email:** `vi.mock` the mailer module; `sendMail` pushes `{ to, subject, html }` into an in-memory outbox. Helpers (`lastOtpFor(email)`, `lastLinkFor(email)`) pull the code/token out of the HTML. No app code change, no real emails.
+- **Rate limiters:** each limiter gets an explicit `MemoryStore`; `rate-limit.ts` exports `resetRateLimiters()` (calls `resetAll()` on each store), run before each test. Needed because all test requests share one IP and `generalRequestLimiter` (100 / 15 min) would otherwise trip mid-suite.
+- **Time-based cases:** no fake clock, no real waiting. Tests move time in the data: set `expiresAt` / `otpExpiresAt` in the past via Prisma, and sign an already-expired JWT for the expired-access-token case.
+- **Password hashing cost:** new `BCRYPT_ROUNDS` env (default 12; `.env.test` sets 4). `env.ts` rejects < 10 unless `NODE_ENV=test`. Real bcrypt still runs in tests.
 - **Scripts:** `pnpm test` and `pnpm test:watch`.
+- **CI:** GitHub Actions workflow (`.github/workflows/ci.yml`) with a Postgres service; runs lint, typecheck (`tsc --noEmit`) and tests on every push and PR.
 
 ### What gets tested (one file per area)
-- Registration: register, verify-email, resend-verification (cooldown, same response for unknown emails), unverified login → `403 EMAIL_NOT_VERIFIED`.
-- Login + OTP: verify-otp success, wrong code, 5-attempt lockout, resend-otp (cooldown `429`, attempts kept).
-- Sessions: refresh rotation and preserved duration, logout, `/me` (valid, missing, expired, unknown user).
-- Recovery: forgot/reset password (single use, sessions revoked, expired link).
-- Change password: success keeps this device, other sessions revoked, wrong current password `400`, same password `400`.
+- Registration: register, duplicate email `409`, verify-email, resend-verification (cooldown, same response for unknown emails), unverified login → `403 EMAIL_NOT_VERIFIED`, one malformed-body sample → `400 Validation failed`.
+- Login + OTP: wrong password and unknown email give the identical `401`, verify-otp success, wrong code, 5-attempt lockout, resend-otp (cooldown `429`, attempts kept).
+- Sessions: refresh rotation and preserved duration, reusing a rotated-out refresh token `401`, logout, `/me` (valid, missing, expired, unknown user).
+- Recovery: forgot/reset password (single use, sessions revoked, expired link), unknown email gets the same response as a real one.
+- Change password: success keeps this device, other sessions revoked, wrong current password `400`, same password `400`, another user's refresh token `400 INVALID_REFRESH_TOKEN`.
 - Rate limits: 11th failed login `429`, successes not counted, email-sending limit.
+- CORS: `FRONTEND_URL` origin gets `Access-Control-Allow-Origin`, a foreign origin doesn't.
 
-Steps (implementer): (1) setup only + one smoke test, (2-4) test files, a few areas per run.
+Steps (implementer, one per run, verified before the next):
+1. App changes: `BCRYPT_ROUNDS` env + `resetRateLimiters()`. Verify: lint, typecheck, app still boots.
+2. Test infra: `vitest.config.ts`, `.env.test`, global setup (`_test` guard, create DB, migrate), truncate, mailer mock + helpers, scripts, one smoke test. Verify: `pnpm test` green twice in a row, dev DB untouched.
+3. CI workflow. Verify: green run on push.
+4. Tests: registration, login + OTP.
+5. Tests: sessions, recovery.
+6. Tests: change password, rate limits, CORS.
 
 ---
 
@@ -146,3 +159,15 @@ Steps (implementer): (1) setup only + one smoke test, (2-4) test files, a few ar
 | 5 | CORS | Allow only `FRONTEND_URL` |
 | 6 | Test type | API tests, real test DB, fake mailer |
 | 7 | Test runner | Vitest + Supertest |
+| 8 | Dev DB safety in tests | Vitest loads `.env.test` + `_test` DB-name guard (not `NODE_ENV` env files, not Testcontainers) |
+| 9 | Test DB creation | Global setup auto-creates `servio_test` if missing (not manual README step, not Docker init script) |
+| 10 | Test file parallelism | Off, files run one at a time (not per-worker DBs, not no-truncation unique data) |
+| 11 | Rate limiter reset | Explicit `MemoryStore` per limiter + exported `resetRateLimiters()` (not `vi.resetModules`, not `resetKey(ip)`) |
+| 12 | Time-based tests | Edit DB timestamps / sign expired JWT (not fake timers, not tiny env durations + real waits) |
+| 13 | bcrypt cost in tests | `BCRYPT_ROUNDS` env, 4 in tests, min 10 outside test (not accept slowness, not mock hashing) |
+| 14 | Fake mailer | `vi.mock` mailer → in-memory outbox + extract helpers (not test transport in app code, not Mailpit) |
+| 15 | Table cleanup | Dynamic `TRUNCATE` of all tables before each test (not hand-kept `deleteMany` list, not per-test rollback) |
+| 16 | CI | GitHub Actions: Postgres service + lint, typecheck, tests on push/PR (not local-only, not pre-push hook) |
+| 17 | Extra coverage | Added: duplicate email, uniform login 401, uniform forgot-password reply, rotated refresh reuse, validation sample, foreign refresh token on change-password, CORS |
+| 18 | Concurrent refresh race (found by tests: loser got 500) | Claim the session with `deleteMany` + count check → 401 if 0, same as `resetPassword` (not catching P2025, not row locks) |
+| 19 | Test file layout | Per-module folders: `tests/auth/*.test.ts`; app-level tests (smoke, cors) stay in `tests/` (not colocated in `src/`, not flat prefixed names) |

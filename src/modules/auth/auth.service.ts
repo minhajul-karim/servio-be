@@ -252,7 +252,11 @@ export async function refresh(input: RefreshInput) {
     throw new AppError(401, "Invalid or expired refresh token");
   }
 
-  await prisma.session.delete({ where: { id: session.id } });
+  const claimed = await prisma.session.deleteMany({ where: { id: session.id } });
+
+  if (claimed.count === 0) {
+    throw new AppError(401, "Invalid or expired refresh token");
+  }
 
   const accessToken = signToken({ userId: session.user.id, role: session.user.role });
   const refreshToken = generateToken();

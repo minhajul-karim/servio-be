@@ -1,11 +1,17 @@
-import { Options, rateLimit } from "express-rate-limit";
+import { MemoryStore, Options, rateLimit } from "express-rate-limit";
 import { AppError } from "../errors/app-error";
 
 const FIFTEEN_MINUTES_IN_MS = 15 * 60 * 1000;
 const ONE_HOUR_IN_MS = 60 * 60 * 1000;
 
+const stores: MemoryStore[] = [];
+
 function createLimiter(options: Partial<Options>) {
+  const store = new MemoryStore();
+  stores.push(store);
+
   return rateLimit({
+    store,
     standardHeaders: "draft-8",
     legacyHeaders: false,
     handler: (_req, _res, next) => {
@@ -26,3 +32,7 @@ export const loginBruteForceLimiter = createLimiter({
 });
 
 export const emailSendingLimiter = createLimiter({ windowMs: ONE_HOUR_IN_MS, limit: 10 });
+
+export async function resetRateLimiters(): Promise<void> {
+  await Promise.all(stores.map(async (store) => store.resetAll()));
+}

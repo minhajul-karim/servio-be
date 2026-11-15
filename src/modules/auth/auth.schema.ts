@@ -1,49 +1,83 @@
-/**
- * TODO: implement zod schemas for auth request bodies.
- *
- * Purpose: define what a valid request body looks like for each auth
- * endpoint, in one place, so validate() (common/middlewares/validate.ts)
- * can enforce it before the controller ever sees the data.
- *
- * registerSchema, for POST /api/auth/register:
- *
- *   export const registerSchema = z.object({
- *     email: z.string().email(),
- *     password: z.string().min(8),
- *   });
- *
- *   export type RegisterInput = z.infer<typeof registerSchema>;
- *
- * loginSchema, for POST /api/auth/login:
- *
- *   export const loginSchema = z.object({
- *     email: z.string().email(),
- *     password: z.string().min(8),
- *     rememberMe: z.boolean().optional().default(false),
- *   });
- *
- *   export type LoginInput = z.infer<typeof loginSchema>;
- *
- * rememberMe controls how long the refresh token lives (see
- * auth.service.ts) — true for "keep me logged in" (long-lived), false for
- * the default shorter session.
- *
- * refreshSchema, for POST /api/auth/refresh:
- *
- *   export const refreshSchema = z.object({
- *     refreshToken: z.string(),
- *   });
- *
- *   export type RefreshInput = z.infer<typeof refreshSchema>;
- *
- * logoutSchema, for POST /api/auth/logout — same shape as refreshSchema
- * (also just needs the raw refresh token to know which Session row to
- * delete). You can reuse refreshSchema directly for this route instead of
- * declaring a separate identical one, if you'd rather not duplicate it —
- * your call.
- *
- * Exporting each inferred type (e.g. RegisterInput, LoginInput) alongside
- * its schema means auth.service.ts and auth.controller.ts can use it as a
- * TypeScript type without redeclaring the shape by hand — the schema is the
- * single source of truth for both runtime validation and compile-time types.
- */
+import { z } from "zod";
+
+const MAX_PASSWORD_LENGTH = 64;
+const MAX_PASSWORD_BYTES = 72;
+
+const emailField = z.string().trim().toLowerCase().max(254).pipe(z.email());
+
+const withByteLimit = (schema: z.ZodString) =>
+  schema
+    .max(MAX_PASSWORD_LENGTH)
+    .refine((value) => Buffer.byteLength(value, "utf8") <= MAX_PASSWORD_BYTES, {
+      message: "Password is too long",
+    });
+
+const passwordField = withByteLimit(z.string().min(8));
+
+const existingPasswordField = withByteLimit(z.string().min(1));
+
+export const registerSchema = z.object({
+  email: emailField,
+  password: passwordField,
+  name: z.string().trim().min(1).max(100),
+});
+
+export type RegisterInput = z.infer<typeof registerSchema>;
+
+export const loginSchema = z.object({
+  email: emailField,
+  password: existingPasswordField,
+});
+
+export type LoginInput = z.infer<typeof loginSchema>;
+
+export const verifyOtpSchema = z.object({
+  email: emailField,
+  otp: z.string().regex(/^\d{6}$/),
+  rememberMe: z.boolean().optional().default(false),
+});
+
+export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>;
+
+export const resendOtpSchema = z.object({ email: emailField });
+
+export type ResendOtpInput = z.infer<typeof resendOtpSchema>;
+
+export const forgotPasswordSchema = z.object({
+  email: emailField,
+});
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z.object({
+  token: z.string(),
+  password: passwordField,
+});
+
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
+export const changePasswordSchema = z.object({
+  currentPassword: existingPasswordField,
+  newPassword: passwordField,
+  refreshToken: z.string(),
+});
+
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+export const refreshSchema = z.object({
+  refreshToken: z.string(),
+});
+
+export type RefreshInput = z.infer<typeof refreshSchema>;
+
+export const logoutSchema = refreshSchema;
+
+export type LogoutInput = z.infer<typeof logoutSchema>;
+
+export const verifyEmailSchema = z.object({ token: z.string() });
+
+export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
+
+export const resendVerificationSchema = z.object({ email: emailField });
+
+export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;

@@ -1,41 +1,100 @@
-/**
- * TODO: implement the auth controller.
- *
- * Purpose: translates HTTP in and out — reads req.body, calls the service,
- * shapes the response. No business logic belongs here; that's
- * auth.service.ts's job. Think of this like a component that calls a hook
- * and renders whatever it gets back — it doesn't decide the data, just
- * wires it to the request/response cycle.
- *
- * register(req, res, next):
- *   const user = await authService.register(req.body);
- *   res.status(201).json({ ...user, passwordHash: undefined });
- *   // or: destructure passwordHash out before sending, whichever reads
- *   // clearer to you — the point is it must not reach the client.
- *
- * login(req, res, next):
- *   const { accessToken, refreshToken } = await authService.login(req.body);
- *   res.status(200).json({ accessToken, refreshToken });
- *
- * refresh(req, res, next):
- *   const { accessToken, refreshToken } = await authService.refresh(req.body);
- *   res.status(200).json({ accessToken, refreshToken });
- *   // note this returns a NEW refresh token every time — the client must
- *   // overwrite whatever it had stored with this new one, since the old
- *   // one was just invalidated by rotation in auth.service.ts
- *
- * logout(req, res, next):
- *   await authService.logout(req.body);
- *   res.status(204).send();
- *   // 204 No Content fits here — logout doesn't need to return a body
- *
- * Because Express 5 forwards errors thrown inside async handlers to
- * error-handler.ts automatically, none of these need their own try/catch —
- * letting a thrown AppError from auth.service.ts propagate is enough. A
- * try/catch calling next(err) explicitly also works if you prefer it to be
- * visible in the code.
- *
- * req.body arrives already validated and parsed by this point (validate()
- * runs before each handler in auth.routes.ts) — each function here can
- * trust its shape matches the corresponding *Input type from auth.schema.ts.
- */
+import { Request, Response } from "express";
+import { BodyRequest, QueryRequest } from "../../common/types/request";
+import { AppError } from "../../common/errors/app-error";
+import * as authService from "./auth.service";
+import {
+  RegisterInput,
+  LoginInput,
+  RefreshInput,
+  LogoutInput,
+  VerifyEmailInput,
+  VerifyOtpInput,
+  ResendOtpInput,
+  ResendVerificationInput,
+  ForgotPasswordInput,
+  ResetPasswordInput,
+  ChangePasswordInput,
+} from "./auth.schema";
+
+export async function register(req: BodyRequest<RegisterInput>, res: Response): Promise<void> {
+  const user = await authService.register(req.body);
+  res.status(201).json(user);
+}
+
+export async function login(req: BodyRequest<LoginInput>, res: Response): Promise<void> {
+  const result = await authService.login(req.body);
+  res.status(200).json(result);
+}
+
+export async function resendOtp(req: BodyRequest<ResendOtpInput>, res: Response): Promise<void> {
+  const result = await authService.resendOtp(req.body);
+  res.status(200).json(result);
+}
+
+export async function verifyOtp(req: BodyRequest<VerifyOtpInput>, res: Response): Promise<void> {
+  const { accessToken, refreshToken } = await authService.verifyOtp(req.body);
+  res.status(200).json({ accessToken, refreshToken });
+}
+
+export async function verify(req: QueryRequest<VerifyEmailInput>, res: Response): Promise<void> {
+  await authService.verifyEmail(req.query);
+  res.status(200).json({ success: true });
+}
+
+export async function resendVerificationEmail(
+  req: BodyRequest<ResendVerificationInput>,
+  res: Response,
+): Promise<void> {
+  const result = await authService.resendVerificationEmail(req.body);
+  res.status(200).json({
+    message: "If that account exists and is unverified, a new verification link has been sent",
+    ...result,
+  });
+}
+
+export async function refresh(req: BodyRequest<RefreshInput>, res: Response): Promise<void> {
+  const { accessToken, refreshToken } = await authService.refresh(req.body);
+  res.status(200).json({ accessToken, refreshToken });
+}
+
+export async function logout(req: BodyRequest<LogoutInput>, res: Response): Promise<void> {
+  await authService.logout(req.body);
+  res.status(204).send();
+}
+
+export async function forgotPassword(
+  req: BodyRequest<ForgotPasswordInput>,
+  res: Response,
+): Promise<void> {
+  await authService.forgotPassword(req.body);
+  res
+    .status(200)
+    .json({ message: "If an account exists for that email, a reset link has been sent" });
+}
+
+export async function resetPassword(
+  req: BodyRequest<ResetPasswordInput>,
+  res: Response,
+): Promise<void> {
+  await authService.resetPassword(req.body);
+  res.status(200).json({ success: true });
+}
+
+export async function changePassword(
+  req: BodyRequest<ChangePasswordInput>,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "Unauthorized");
+  }
+  await authService.changePassword(req.user.userId, req.body);
+  res.status(200).json({ success: true });
+}
+
+export async function me(req: Request, res: Response): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "Unauthorized");
+  }
+  const user = await authService.getMe(req.user.userId);
+  res.status(200).json(user);
+}

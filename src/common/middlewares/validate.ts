@@ -7,11 +7,16 @@ export function validate(schema: z.ZodType, source: "body" | "query" | "params" 
     const parsed = schema.safeParse(req[source]);
 
     if (!parsed.success) {
-      next(new AppError(400, JSON.stringify(z.flattenError(parsed.error).fieldErrors)));
+      next(new AppError(400, "Validation failed", z.flattenError(parsed.error).fieldErrors));
       return;
     }
 
-    req[source] = parsed.data;
+    Object.defineProperty(req, source, {
+      value: parsed.data,
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
     next();
   };
 }

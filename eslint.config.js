@@ -3,7 +3,7 @@ const eslintConfigPrettier = require("eslint-config-prettier");
 
 module.exports = tseslint.config(
   {
-    ignores: ["dist", "src/generated", "eslint.config.js", "prisma.config.ts"],
+    ignores: ["dist", "src/generated", "eslint.config.js", "prisma.config.ts", "vitest.config.ts"],
   },
   ...tseslint.configs.recommendedTypeChecked,
   eslintConfigPrettier,

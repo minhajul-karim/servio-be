@@ -10,6 +10,21 @@ function bodyParserErrorType(err: unknown): string | undefined {
   return undefined;
 }
 
+function isExposedClientError(err: unknown): err is { status: number; message: string } {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "expose" in err &&
+    err.expose === true &&
+    "status" in err &&
+    typeof err.status === "number" &&
+    err.status >= 400 &&
+    err.status <= 499 &&
+    "message" in err &&
+    typeof err.message === "string"
+  );
+}
+
 export function errorHandler(
   err: unknown,
   _req: Request,
@@ -43,6 +58,11 @@ export function errorHandler(
 
   if (bodyErrorType === "entity.too.large") {
     res.status(413).json({ message: "Request body too large" });
+    return;
+  }
+
+  if (bodyErrorType !== undefined && isExposedClientError(err)) {
+    res.status(err.status).json({ message: err.message });
     return;
   }
 

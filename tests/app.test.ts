@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { api } from "./helpers/request";
 
 describe("app hardening", () => {
@@ -19,6 +19,22 @@ describe("app hardening", () => {
 
     expect(res.status).toBe(413);
     expect(res.body).toEqual({ message: "Request body too large" });
+  });
+
+  it("returns 415 without logging for unsupported charsets", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const res = await api()
+        .post("/api/auth/login")
+        .set("Content-Type", "application/json; charset=latin1")
+        .send(JSON.stringify({ email: "a@example.com", password: "x" }));
+
+      expect(res.status).toBe(415);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("sets security headers and hides x-powered-by", async () => {

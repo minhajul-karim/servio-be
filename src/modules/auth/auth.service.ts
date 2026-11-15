@@ -119,14 +119,14 @@ export async function verifyEmail(input: VerifyEmailInput) {
 async function createSession(
   userId: string,
   role: Role,
-  durationMs: number,
+  lifetime: number | Date,
   db: Pick<typeof prisma, "session"> = prisma,
 ) {
   const accessToken = signToken({ userId, role });
 
   const refreshToken = generateToken();
   const tokenHash = hashToken(refreshToken);
-  const expiresAt = new Date(Date.now() + durationMs);
+  const expiresAt = lifetime instanceof Date ? lifetime : new Date(Date.now() + lifetime);
 
   await db.session.create({ data: { userId, tokenHash, expiresAt } });
 
@@ -186,11 +186,25 @@ async function issueLoginOtp(userId: string, email: string, resetAttempts: boole
     },
   });
 
-  await sendMail(
-    email,
-    "Your login code",
-    `<p>Your login code is:</p><p style="font-size:24px;letter-spacing:4px"><strong>${otp}</strong></p><p>This code expires in 10 minutes. If you didn't try to log in, you can ignore this email.</p>`,
-  );
+  try {
+    await sendMail(
+      email,
+      "Your login code",
+      `<p>Your login code is:</p><p style="font-size:24px;letter-spacing:4px"><strong>${otp}</strong></p><p>This code expires in 10 minutes. If you didn't try to log in, you can ignore this email.</p>`,
+    );
+  } catch (error) {
+    console.error("Failed to send login code email", error);
+    await prisma.user.update({
+      where: { id: userId },
+      data: { otpCode: null, otpExpiresAt: null },
+    });
+    throw new AppError(
+      503,
+      "Could not send the login code. Please try again",
+      undefined,
+      "EMAIL_SEND_FAILED",
+    );
+  }
 }
 
 export async function login(input: LoginInput) {
@@ -215,7 +229,16 @@ export async function login(input: LoginInput) {
     );
   }
 
-  await issueLoginOtp(user.id, user.email, true);
+  const lastSentAt = user.otpExpiresAt ? user.otpExpiresAt.getTime() - OTP_EXPIRY_IN_MS : null;
+  const sinceLastSentMs = lastSentAt === null ? null : Date.now() - lastSentAt;
+
+  if (sinceLastSentMs !== null && sinceLastSentMs < RESEND_COOLDOWN_IN_MS) {
+    const remainingSeconds = Math.ceil((RESEND_COOLDOWN_IN_MS - sinceLastSentMs) / 1000);
+    return { otpRequired: true, resendAfterSeconds: Math.max(1, remainingSeconds) };
+  }
+
+  const isStaleCounter = sinceLastSentMs === null || sinceLastSentMs >= OTP_LOCK_IN_MS;
+  await issueLoginOtp(user.id, user.email, isStaleCounter);
   return { otpRequired: true, resendAfterSeconds: RESEND_COOLDOWN_IN_SECONDS };
 }
 
@@ -302,8 +325,6 @@ export async function refresh(input: RefreshInput) {
     throw new AppError(401, "Invalid or expired refresh token");
   }
 
-  const durationMs = session.expiresAt.getTime() - session.createdAt.getTime();
-
   return prisma.$transaction(async (tx) => {
     const claimed = await tx.session.deleteMany({ where: { id: session.id } });
 
@@ -311,7 +332,7 @@ export async function refresh(input: RefreshInput) {
       throw new AppError(401, "Invalid or expired refresh token");
     }
 
-    return createSession(session.user.id, session.user.role, durationMs, tx);
+    return createSession(session.user.id, session.user.role, session.expiresAt, tx);
   });
 }
 
@@ -371,7 +392,7 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
 
     await tx.user.update({
       where: { id: resetToken.userId },
-      data: { passwordHash, ...CLEARED_OTP_FIELDS, otpLockedUntil: null },
+      data: { passwordHash, emailVerified: true, ...CLEARED_OTP_FIELDS, otpLockedUntil: null },
     });
     await tx.session.deleteMany({ where: { userId: resetToken.userId } });
   });
@@ -412,6 +433,7 @@ export async function changePassword(userId: string, input: ChangePasswordInput)
       where: { id: userId },
       data: { passwordHash, ...CLEARED_OTP_FIELDS, otpLockedUntil: null },
     });
+    await tx.passwordResetToken.deleteMany({ where: { userId } });
     await tx.session.deleteMany({ where: { userId, id: { not: session.id } } });
   });
 }

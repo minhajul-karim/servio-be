@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "../../src/common/prisma";
 import { createVerifiedUser, loginWithOtp } from "../helpers/auth";
-import { lastOtpFor } from "../helpers/mailer";
+import { lastLinkFor, lastOtpFor, tokenFromLink } from "../helpers/mailer";
 import { api } from "../helpers/request";
 
 const NEW_PASSWORD = "brand-new-password";
@@ -168,5 +168,25 @@ describe("change-password", () => {
     const blocked = await attempt();
     expect(blocked.status).toBe(429);
     expect(blocked.body).toMatchObject({ code: "RATE_LIMITED" });
+  });
+
+  it("invalidates reset links requested before the change", async () => {
+    const { email, password } = await createVerifiedUser();
+    const tokens = await loginWithOtp(email, password);
+    const forgot = await api().post("/api/auth/forgot-password").send({ email });
+    expect(forgot.status).toBe(200);
+    const resetToken = tokenFromLink(lastLinkFor(email) as string) as string;
+
+    const changed = await change(tokens.accessToken, {
+      currentPassword: password,
+      newPassword: NEW_PASSWORD,
+      refreshToken: tokens.refreshToken,
+    });
+    expect(changed.status).toBe(200);
+
+    const res = await api()
+      .post("/api/auth/reset-password")
+      .send({ token: resetToken, password: "another-new-password" });
+    expect(res.status).toBe(400);
   });
 });

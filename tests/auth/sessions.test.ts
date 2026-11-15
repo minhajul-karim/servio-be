@@ -65,6 +65,42 @@ describe("refresh", () => {
     expect(Math.abs(remaining - ONE_DAY_IN_MS)).toBeLessThan(ONE_MINUTE_IN_MS);
   });
 
+  it("keeps the original expiry instead of extending it", async () => {
+    const { id, tokens } = await setup();
+    const originalExpiry = new Date(Date.now() + 60 * ONE_MINUTE_IN_MS);
+    await prisma.session.updateMany({
+      where: { userId: id },
+      data: {
+        createdAt: new Date(Date.now() - 23 * 60 * ONE_MINUTE_IN_MS),
+        expiresAt: originalExpiry,
+      },
+    });
+
+    const res = await refresh(tokens.refreshToken);
+    expect(res.status).toBe(200);
+
+    const session = await prisma.session.findFirstOrThrow({ where: { userId: id } });
+    expect(Math.abs(session.expiresAt.getTime() - originalExpiry.getTime())).toBeLessThan(1000);
+  });
+
+  it("does not extend a rememberMe session past its original expiry", async () => {
+    const { id, tokens } = await setup(true);
+    const originalExpiry = new Date(Date.now() + 29 * ONE_DAY_IN_MS);
+    await prisma.session.updateMany({
+      where: { userId: id },
+      data: {
+        createdAt: new Date(Date.now() - ONE_DAY_IN_MS),
+        expiresAt: originalExpiry,
+      },
+    });
+
+    const res = await refresh(tokens.refreshToken);
+    expect(res.status).toBe(200);
+
+    const session = await prisma.session.findFirstOrThrow({ where: { userId: id } });
+    expect(Math.abs(session.expiresAt.getTime() - originalExpiry.getTime())).toBeLessThan(1000);
+  });
+
   it("rejects an expired session", async () => {
     const { id, tokens } = await setup();
     await prisma.session.updateMany({

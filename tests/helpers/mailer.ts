@@ -6,6 +6,16 @@ export interface SentMail {
 
 export const outbox: SentMail[] = [];
 
+let sendingFails = false;
+
+export function setSendingFails(value: boolean): void {
+  sendingFails = value;
+}
+
+export function isSendingFailing(): boolean {
+  return sendingFails;
+}
+
 export function clearOutbox(): void {
   outbox.length = 0;
 }

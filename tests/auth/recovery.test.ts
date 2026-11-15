@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "../../src/common/prisma";
-import { createVerifiedUser, loginWithOtp } from "../helpers/auth";
+import { createVerifiedUser, loginWithOtp, registerUser } from "../helpers/auth";
 import { clearOutbox, lastLinkFor, lastOtpFor, outbox, tokenFromLink } from "../helpers/mailer";
 import { api } from "../helpers/request";
 
@@ -143,5 +143,21 @@ describe("reset-password", () => {
 
     const statuses = results.map((res) => res.status).sort();
     expect(statuses).toEqual([200, 400]);
+  });
+
+  it("marks an unverified user as verified so they can log in with the new password", async () => {
+    const { res: registerRes, email } = await registerUser();
+    expect(registerRes.status).toBe(201);
+    const token = await requestToken(email);
+
+    const res = await reset(token);
+    expect(res.status).toBe(200);
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    expect(user?.emailVerified).toBe(true);
+
+    const login = await api().post("/api/auth/login").send({ email, password: NEW_PASSWORD });
+    expect(login.status).toBe(200);
+    expect(login.body).toEqual({ otpRequired: true, resendAfterSeconds: 60 });
   });
 });

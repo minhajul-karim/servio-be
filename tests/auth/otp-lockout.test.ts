@@ -152,3 +152,74 @@ describe("otp lockout", () => {
     expect(user.otpLockedUntil).toBeNull();
   });
 });
+
+describe("otp counter across repeated logins", () => {
+  async function shiftLastSent(email: string, ms: number): Promise<void> {
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    await prisma.user.update({
+      where: { email },
+      data: { otpExpiresAt: new Date((user.otpExpiresAt as Date).getTime() - ms) },
+    });
+  }
+
+  async function wrongCodes(email: string, count: number): Promise<void> {
+    const otp = lastOtpFor(email) as string;
+    for (let i = 0; i < count; i += 1) {
+      const res = await verifyOtp(email, wrongOtpFor(otp));
+      expect(res.status).toBe(401);
+    }
+  }
+
+  it("keeps the counter when re-logging in after the cooldown, so the lock still fires", async () => {
+    const { email, password } = await createVerifiedUser();
+    expect((await login(email, password)).status).toBe(200);
+    await wrongCodes(email, 4);
+
+    await shiftLastSent(email, 2 * 60 * 1000);
+    expect((await login(email, password)).status).toBe(200);
+    clearOutbox();
+    await wrongCodes(email, 1);
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    expect(user.otpLockedUntil).not.toBeNull();
+    expect(outbox.map((mail) => mail.subject)).toEqual(["Unusual login activity"]);
+  });
+
+  it("resets the counter when the last code is older than the lock window", async () => {
+    const { email, password } = await createVerifiedUser();
+    expect((await login(email, password)).status).toBe(200);
+    await wrongCodes(email, 4);
+
+    await shiftLastSent(email, 16 * 60 * 1000);
+    expect((await login(email, password)).status).toBe(200);
+    await wrongCodes(email, 4);
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    expect(user.otpLockedUntil).toBeNull();
+    expect(user.otpAttempts).toBe(4);
+  });
+
+  it("sends one code for repeated logins within the cooldown and keeps it valid", async () => {
+    const { email, password } = await createVerifiedUser();
+    clearOutbox();
+
+    const responses = [];
+    for (let i = 0; i < 5; i += 1) {
+      responses.push(await login(email, password));
+    }
+
+    for (const res of responses) {
+      expect(res.status).toBe(200);
+      expect(bodyOf<{ otpRequired: boolean }>(res).otpRequired).toBe(true);
+    }
+    for (const res of responses.slice(1)) {
+      const { resendAfterSeconds } = bodyOf<{ resendAfterSeconds: number }>(res);
+      expect(resendAfterSeconds).toBeGreaterThanOrEqual(1);
+      expect(resendAfterSeconds).toBeLessThanOrEqual(60);
+    }
+    expect(outbox.filter((mail) => mail.subject === "Your login code")).toHaveLength(1);
+
+    const verify = await verifyOtp(email, lastOtpFor(email) as string);
+    expect(verify.status).toBe(200);
+  });
+});

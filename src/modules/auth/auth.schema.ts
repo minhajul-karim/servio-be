@@ -1,19 +1,32 @@
 import { z } from "zod";
 
-const emailField = z.string().trim().toLowerCase().pipe(z.email());
+const MAX_PASSWORD_LENGTH = 64;
+const MAX_PASSWORD_BYTES = 72;
+
+const emailField = z.string().trim().toLowerCase().max(254).pipe(z.email());
+
+const withByteLimit = (schema: z.ZodString) =>
+  schema
+    .max(MAX_PASSWORD_LENGTH)
+    .refine((value) => Buffer.byteLength(value, "utf8") <= MAX_PASSWORD_BYTES, {
+      message: "Password is too long",
+    });
+
+const passwordField = withByteLimit(z.string().min(8));
+
+const existingPasswordField = withByteLimit(z.string().min(1));
 
 export const registerSchema = z.object({
   email: emailField,
-  password: z.string().min(8),
-  name: z.string().min(1),
+  password: passwordField,
+  name: z.string().trim().min(1).max(100),
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 
 export const loginSchema = z.object({
   email: emailField,
-  password: z.string().min(1),
-  rememberMe: z.boolean().optional().default(false),
+  password: existingPasswordField,
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
@@ -38,14 +51,14 @@ export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 
 export const resetPasswordSchema = z.object({
   token: z.string(),
-  password: z.string().min(8),
+  password: passwordField,
 });
 
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 
 export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1),
-  newPassword: z.string().min(8),
+  currentPassword: existingPasswordField,
+  newPassword: passwordField,
   refreshToken: z.string(),
 });
 

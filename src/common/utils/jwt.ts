@@ -10,5 +10,8 @@ export function signToken(payload: { userId: string; role: Role }): string {
 }
 
 export function verifyToken(token: string): { userId: string; role: Role } {
-  return jwt.verify(token, env.JWT_SECRET) as { userId: string; role: Role };
+  return jwt.verify(token, env.JWT_SECRET, { algorithms: ["HS256"] }) as {
+    userId: string;
+    role: Role;
+  };
 }

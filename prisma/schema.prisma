@@ -62,6 +62,7 @@ model User {
   otpCode                 String?                  @map("otp_code")
   otpExpiresAt            DateTime?                @map("otp_expires_at")
   otpAttempts             Int                      @default(0) @map("otp_attempts")
+  otpLockedUntil          DateTime?                @map("otp_locked_until")
   staffAssignments        StaffAssignment[]
   sessions                Session[]
   passwordResetTokens     PasswordResetToken[]

@@ -188,4 +188,19 @@ describe("resend-otp", () => {
 
     expect(res.status).toBe(400);
   });
+
+  it("returns 400 and sends no email when the OTP has expired", async () => {
+    const { email, password } = await createVerifiedUser();
+    await startLogin(email, password);
+    await prisma.user.update({
+      where: { email },
+      data: { otpExpiresAt: new Date(Date.now() - ONE_MINUTE_IN_MS) },
+    });
+    clearOutbox();
+
+    const res = await api().post("/api/auth/resend-otp").send({ email });
+
+    expect(res.status).toBe(400);
+    expect(outbox).toHaveLength(0);
+  });
 });

@@ -28,6 +28,7 @@ const PASSWORD_RESET_EXPIRY_IN_MS = 60 * 60 * 1000;
 
 const OTP_EXPIRY_IN_MS = 10 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
+const OTP_LOCK_IN_MS = 15 * 60 * 1000;
 const RESEND_COOLDOWN_IN_MS = 60 * 1000;
 const RESEND_COOLDOWN_IN_SECONDS = RESEND_COOLDOWN_IN_MS / 1000;
 
@@ -99,34 +100,65 @@ export async function verifyEmail(input: VerifyEmailInput) {
     throw new AppError(400, "Invalid or expired verification link");
   }
 
-  await Promise.all([
-    prisma.user.update({
+  await prisma.$transaction(async (tx) => {
+    const claimed = await tx.emailVerificationToken.deleteMany({
+      where: { id: token.id },
+    });
+
+    if (claimed.count === 0) {
+      throw new AppError(400, "Invalid or expired verification link");
+    }
+
+    await tx.user.update({
       where: { id: token.userId },
       data: { emailVerified: true },
-    }),
-    prisma.emailVerificationToken.delete({
-      where: { id: token.id },
-    }),
-  ]);
+    });
+  });
 }
 
-async function createSession(userId: string, role: Role, rememberMe: boolean) {
+async function createSession(
+  userId: string,
+  role: Role,
+  durationMs: number,
+  db: Pick<typeof prisma, "session"> = prisma,
+) {
   const accessToken = signToken({ userId, role });
 
   const refreshToken = generateToken();
   const tokenHash = hashToken(refreshToken);
-  const expiresAt = new Date(Date.now() + (rememberMe ? THIRTY_DAYS_IN_MS : ONE_DAY_IN_MS));
+  const expiresAt = new Date(Date.now() + durationMs);
 
-  await prisma.session.create({ data: { userId, tokenHash, expiresAt } });
+  await db.session.create({ data: { userId, tokenHash, expiresAt } });
 
   return { accessToken, refreshToken };
 }
 
-function clearOtp(userId: string) {
-  return prisma.user.update({
-    where: { id: userId },
-    data: CLEARED_OTP_FIELDS,
+async function lockOtp(userId: string, email: string): Promise<void> {
+  const now = new Date();
+  const locked = await prisma.user.updateMany({
+    where: {
+      id: userId,
+      OR: [{ otpLockedUntil: null }, { otpLockedUntil: { lte: now } }],
+    },
+    data: { ...CLEARED_OTP_FIELDS, otpLockedUntil: new Date(now.getTime() + OTP_LOCK_IN_MS) },
   });
+
+  if (locked.count === 0) {
+    await prisma.user.update({ where: { id: userId }, data: CLEARED_OTP_FIELDS });
+    return;
+  }
+
+  const resetLink = `${env.FRONTEND_URL}/forgot-password`;
+
+  try {
+    await sendMail(
+      email,
+      "Unusual login activity",
+      `<p>Someone entered 5 wrong login codes for your account, so new logins are paused for 15 minutes.</p><p>If this wasn't you, reset your password:</p><p><a href="${resetLink}">${resetLink}</a></p>`,
+    );
+  } catch (err) {
+    console.error("Failed to send OTP lock email:", err);
+  }
 }
 
 async function verifyCredentials(email: string, password: string) {
@@ -172,13 +204,24 @@ export async function login(input: LoginInput) {
     );
   }
 
+  if (user.otpLockedUntil && user.otpLockedUntil > new Date()) {
+    const retryAfterSeconds = Math.ceil((user.otpLockedUntil.getTime() - Date.now()) / 1000);
+    throw new AppError(
+      429,
+      "Too many wrong codes. Try again later",
+      undefined,
+      "OTP_LOCKED",
+      retryAfterSeconds,
+    );
+  }
+
   await issueLoginOtp(user.id, user.email, true);
   return { otpRequired: true, resendAfterSeconds: RESEND_COOLDOWN_IN_SECONDS };
 }
 
 export async function resendOtp(input: ResendOtpInput) {
   const user = await prisma.user.findUnique({ where: { email: input.email } });
-  if (!user || !user.otpCode || !user.otpExpiresAt) {
+  if (!user || !user.otpCode || !user.otpExpiresAt || user.otpExpiresAt < new Date()) {
     throw new AppError(400, "No pending login. Please log in again");
   }
 
@@ -225,20 +268,27 @@ export async function verifyOtp(input: VerifyOtpInput) {
   });
 
   if (otpAttempts > OTP_MAX_ATTEMPTS) {
-    await clearOtp(user.id);
+    await lockOtp(user.id, user.email);
     throw new AppError(401, "Invalid or expired code");
   }
 
   if (hashToken(input.otp) !== user.otpCode) {
     if (otpAttempts >= OTP_MAX_ATTEMPTS) {
-      await clearOtp(user.id);
+      await lockOtp(user.id, user.email);
     }
     throw new AppError(401, "Invalid or expired code");
   }
 
-  await clearOtp(user.id);
+  const claimed = await prisma.user.updateMany({
+    where: { id: user.id, otpCode: user.otpCode },
+    data: { ...CLEARED_OTP_FIELDS, otpLockedUntil: null },
+  });
 
-  return createSession(user.id, user.role, input.rememberMe);
+  if (claimed.count === 0) {
+    throw new AppError(401, "Invalid or expired code");
+  }
+
+  return createSession(user.id, user.role, input.rememberMe ? THIRTY_DAYS_IN_MS : ONE_DAY_IN_MS);
 }
 
 export async function refresh(input: RefreshInput) {
@@ -252,30 +302,17 @@ export async function refresh(input: RefreshInput) {
     throw new AppError(401, "Invalid or expired refresh token");
   }
 
-  const claimed = await prisma.session.deleteMany({ where: { id: session.id } });
-
-  if (claimed.count === 0) {
-    throw new AppError(401, "Invalid or expired refresh token");
-  }
-
-  const accessToken = signToken({ userId: session.user.id, role: session.user.role });
-  const refreshToken = generateToken();
-  const tokenHash = hashToken(refreshToken);
   const durationMs = session.expiresAt.getTime() - session.createdAt.getTime();
-  const expiresAt = new Date(Date.now() + durationMs);
 
-  await prisma.session.create({
-    data: {
-      userId: session.user.id,
-      tokenHash,
-      expiresAt,
-    },
+  return prisma.$transaction(async (tx) => {
+    const claimed = await tx.session.deleteMany({ where: { id: session.id } });
+
+    if (claimed.count === 0) {
+      throw new AppError(401, "Invalid or expired refresh token");
+    }
+
+    return createSession(session.user.id, session.user.role, durationMs, tx);
   });
-
-  return {
-    accessToken,
-    refreshToken,
-  };
 }
 
 export async function logout(input: LogoutInput) {
@@ -334,7 +371,7 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
 
     await tx.user.update({
       where: { id: resetToken.userId },
-      data: { passwordHash, ...CLEARED_OTP_FIELDS },
+      data: { passwordHash, ...CLEARED_OTP_FIELDS, otpLockedUntil: null },
     });
     await tx.session.deleteMany({ where: { userId: resetToken.userId } });
   });
@@ -373,7 +410,7 @@ export async function changePassword(userId: string, input: ChangePasswordInput)
   await prisma.$transaction(async (tx) => {
     await tx.user.update({
       where: { id: userId },
-      data: { passwordHash, ...CLEARED_OTP_FIELDS },
+      data: { passwordHash, ...CLEARED_OTP_FIELDS, otpLockedUntil: null },
     });
     await tx.session.deleteMany({ where: { userId, id: { not: session.id } } });
   });

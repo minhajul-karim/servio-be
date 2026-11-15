@@ -1,7 +1,9 @@
 import { z } from "zod";
 
+const emailField = z.string().trim().toLowerCase().pipe(z.email());
+
 export const registerSchema = z.object({
-  email: z.email(),
+  email: emailField,
   password: z.string().min(8),
   name: z.string().min(1),
 });
@@ -9,7 +11,7 @@ export const registerSchema = z.object({
 export type RegisterInput = z.infer<typeof registerSchema>;
 
 export const loginSchema = z.object({
-  email: z.email(),
+  email: emailField,
   password: z.string().min(1),
   rememberMe: z.boolean().optional().default(false),
 });
@@ -17,19 +19,19 @@ export const loginSchema = z.object({
 export type LoginInput = z.infer<typeof loginSchema>;
 
 export const verifyOtpSchema = z.object({
-  email: z.email(),
+  email: emailField,
   otp: z.string().regex(/^\d{6}$/),
   rememberMe: z.boolean().optional().default(false),
 });
 
 export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>;
 
-export const resendOtpSchema = z.object({ email: z.email() });
+export const resendOtpSchema = z.object({ email: emailField });
 
 export type ResendOtpInput = z.infer<typeof resendOtpSchema>;
 
 export const forgotPasswordSchema = z.object({
-  email: z.email(),
+  email: emailField,
 });
 
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
@@ -63,6 +65,6 @@ export const verifyEmailSchema = z.object({ token: z.string() });
 
 export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
 
-export const resendVerificationSchema = z.object({ email: z.email() });
+export const resendVerificationSchema = z.object({ email: emailField });
 
 export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;

@@ -35,17 +35,7 @@ const docsCsp = helmet({
   },
 });
 
-const defaultHelmet = helmet();
-
-app.use((req, res, next) => {
-  if (req.path === "/docs" || req.path === "/docs/") {
-    res.locals.nonce = crypto.randomBytes(16).toString("base64");
-
-    return docsCsp(req, res, next);
-  }
-
-  return defaultHelmet(req, res, next);
-});
+app.use(helmet());
 
 app.use(cors({ origin: [new URL(env.FRONTEND_URL).origin] }));
 
@@ -55,7 +45,13 @@ app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
 app.get("/openapi.json", (_req, res) => res.json(openApiDocument));
 
-app.get("/docs", (req, res, next) => {
+const setDocsNonce: express.RequestHandler = (_req, res, next) => {
+  res.locals.nonce = crypto.randomBytes(16).toString("base64");
+
+  next();
+};
+
+app.get("/docs", setDocsNonce, docsCsp, (req, res, next) => {
   const handler = apiReference({
     url: "/openapi.json",
     cdn: SCALAR_CDN,

@@ -105,4 +105,15 @@ describe("docs", () => {
       expect(doc.components.schemas).toHaveProperty("Error");
     });
   });
+
+  it("serves /DOCS with the docs policy and a matching nonce", async () => {
+    const res = await api().get("/DOCS");
+    const csp = res.headers["content-security-policy"];
+    const nonce = /'nonce-([^']+)'/.exec(csp)?.[1];
+
+    expect(res.status).toBe(200);
+    expect(nonce).toBeTruthy();
+    expect(res.text).toContain(`nonce="${nonce}"`);
+    expect(res.text).not.toContain('nonce="undefined"');
+  });
 });

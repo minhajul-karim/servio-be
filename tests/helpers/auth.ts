@@ -69,7 +69,10 @@ export async function loginWithOtp(
   return bodyOf<Tokens>(res);
 }
 
-export async function endResendCooldown(email: string): Promise<void> {
+export async function endResendCooldown(
+  email: string,
+  ms = COOLDOWN_SHIFT_IN_MS,
+): Promise<void> {
   const user = await prisma.user.findUniqueOrThrow({ where: { email } });
   if (!user.otpExpiresAt) {
     throw new Error("User has no pending OTP");
@@ -77,7 +80,7 @@ export async function endResendCooldown(email: string): Promise<void> {
 
   await prisma.user.update({
     where: { id: user.id },
-    data: { otpExpiresAt: new Date(user.otpExpiresAt.getTime() - COOLDOWN_SHIFT_IN_MS) },
+    data: { otpExpiresAt: new Date(user.otpExpiresAt.getTime() - ms) },
   });
 }
 

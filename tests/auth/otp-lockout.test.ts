@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "../../src/common/prisma";
-import { createVerifiedUser, loginWithOtp, wrongOtpFor } from "../helpers/auth";
+import { createVerifiedUser, endResendCooldown, loginWithOtp, wrongOtpFor } from "../helpers/auth";
 import { clearOutbox, lastLinkFor, lastOtpFor, outbox } from "../helpers/mailer";
 import { api, bodyOf } from "../helpers/request";
 
@@ -154,14 +154,6 @@ describe("otp lockout", () => {
 });
 
 describe("otp counter across repeated logins", () => {
-  async function shiftLastSent(email: string, ms: number): Promise<void> {
-    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
-    await prisma.user.update({
-      where: { email },
-      data: { otpExpiresAt: new Date((user.otpExpiresAt as Date).getTime() - ms) },
-    });
-  }
-
   async function wrongCodes(email: string, count: number): Promise<void> {
     const otp = lastOtpFor(email) as string;
     for (let i = 0; i < count; i += 1) {
@@ -175,7 +167,7 @@ describe("otp counter across repeated logins", () => {
     expect((await login(email, password)).status).toBe(200);
     await wrongCodes(email, 4);
 
-    await shiftLastSent(email, 2 * 60 * 1000);
+    await endResendCooldown(email, 2 * 60 * 1000);
     expect((await login(email, password)).status).toBe(200);
     clearOutbox();
     await wrongCodes(email, 1);
@@ -190,7 +182,7 @@ describe("otp counter across repeated logins", () => {
     expect((await login(email, password)).status).toBe(200);
     await wrongCodes(email, 4);
 
-    await shiftLastSent(email, 16 * 60 * 1000);
+    await endResendCooldown(email, 16 * 60 * 1000);
     expect((await login(email, password)).status).toBe(200);
     await wrongCodes(email, 4);
 

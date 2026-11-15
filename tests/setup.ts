@@ -4,16 +4,17 @@ import { assertTestDatabase } from "./test-db";
 assertTestDatabase();
 
 vi.mock("../src/common/utils/mailer", async () => {
-  const { outbox, isSendingFailing } = await import("./helpers/mailer");
+  const { outbox, isSendingFailing, runOnSend } = await import("./helpers/mailer");
 
   return {
-    sendMail: (to: string, subject: string, html: string): Promise<void> => {
+    sendMail: async (to: string, subject: string, html: string): Promise<void> => {
+      await runOnSend();
+
       if (isSendingFailing()) {
-        return Promise.reject(new Error("smtp down"));
+        throw new Error("smtp down");
       }
 
       outbox.push({ to, subject, html });
-      return Promise.resolve();
     },
   };
 });
@@ -21,7 +22,7 @@ vi.mock("../src/common/utils/mailer", async () => {
 beforeEach(async () => {
   const { prisma } = await import("../src/common/prisma");
   const { resetRateLimiters } = await import("../src/common/middlewares/rate-limit");
-  const { clearOutbox, setSendingFails } = await import("./helpers/mailer");
+  const { clearOutbox, setSendingFails, setOnSend } = await import("./helpers/mailer");
 
   const tables = await prisma.$queryRaw<{ tablename: string }[]>`
     SELECT tablename FROM pg_tables
@@ -36,6 +37,7 @@ beforeEach(async () => {
   await resetRateLimiters();
   clearOutbox();
   setSendingFails(false);
+  setOnSend(null);
 });
 
 afterAll(async () => {

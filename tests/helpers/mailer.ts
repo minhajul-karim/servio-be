@@ -8,6 +8,16 @@ export const outbox: SentMail[] = [];
 
 let sendingFails = false;
 
+let onSend: (() => Promise<void>) | null = null;
+
+export function setOnSend(hook: (() => Promise<void>) | null): void {
+  onSend = hook;
+}
+
+export async function runOnSend(): Promise<void> {
+  await onSend?.();
+}
+
 export function setSendingFails(value: boolean): void {
   sendingFails = value;
 }

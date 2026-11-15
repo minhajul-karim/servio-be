@@ -175,16 +175,40 @@ async function verifyCredentials(email: string, password: string) {
   return user;
 }
 
-async function issueLoginOtp(userId: string, email: string, resetAttempts: boolean): Promise<void> {
+function lastOtpSentAt(user: { otpExpiresAt: Date | null }): Date | null {
+  return user.otpExpiresAt ? new Date(user.otpExpiresAt.getTime() - OTP_EXPIRY_IN_MS) : null;
+}
+
+function cooldownRemainingMs(sentAt: Date): number {
+  return Math.max(0, RESEND_COOLDOWN_IN_MS - (Date.now() - sentAt.getTime()));
+}
+
+async function issueLoginOtp(
+  userId: string,
+  email: string,
+  resetAttempts: boolean,
+): Promise<boolean> {
   const otp = generateOtp();
-  await prisma.user.update({
-    where: { id: userId },
+  const hashedOtp = hashToken(otp);
+  const now = Date.now();
+  const claimed = await prisma.user.updateMany({
+    where: {
+      id: userId,
+      OR: [
+        { otpExpiresAt: null },
+        { otpExpiresAt: { lte: new Date(now + OTP_EXPIRY_IN_MS - RESEND_COOLDOWN_IN_MS) } },
+      ],
+    },
     data: {
-      otpCode: hashToken(otp),
-      otpExpiresAt: new Date(Date.now() + OTP_EXPIRY_IN_MS),
+      otpCode: hashedOtp,
+      otpExpiresAt: new Date(now + OTP_EXPIRY_IN_MS),
       ...(resetAttempts && { otpAttempts: 0 }),
     },
   });
+
+  if (claimed.count === 0) {
+    return false;
+  }
 
   try {
     await sendMail(
@@ -194,10 +218,20 @@ async function issueLoginOtp(userId: string, email: string, resetAttempts: boole
     );
   } catch (error) {
     console.error("Failed to send login code email", error);
-    await prisma.user.update({
-      where: { id: userId },
-      data: { otpCode: null, otpExpiresAt: null },
-    });
+
+    try {
+      await prisma.user.updateMany({
+        where: { id: userId, otpCode: hashedOtp },
+        // backdated to exactly one cooldown ago so a retry is allowed at once and otpAttempts is not treated as stale
+        data: {
+          otpCode: null,
+          otpExpiresAt: new Date(Date.now() - RESEND_COOLDOWN_IN_MS + OTP_EXPIRY_IN_MS),
+        },
+      });
+    } catch (cleanupError) {
+      console.error("Failed to clear login code after email failure", cleanupError);
+    }
+
     throw new AppError(
       503,
       "Could not send the login code. Please try again",
@@ -205,6 +239,8 @@ async function issueLoginOtp(userId: string, email: string, resetAttempts: boole
       "EMAIL_SEND_FAILED",
     );
   }
+
+  return true;
 }
 
 export async function login(input: LoginInput) {
@@ -229,16 +265,25 @@ export async function login(input: LoginInput) {
     );
   }
 
-  const lastSentAt = user.otpExpiresAt ? user.otpExpiresAt.getTime() - OTP_EXPIRY_IN_MS : null;
-  const sinceLastSentMs = lastSentAt === null ? null : Date.now() - lastSentAt;
+  const lastSentAt = lastOtpSentAt(user);
+  const cooldownMs = lastSentAt ? cooldownRemainingMs(lastSentAt) : 0;
 
-  if (sinceLastSentMs !== null && sinceLastSentMs < RESEND_COOLDOWN_IN_MS) {
-    const remainingSeconds = Math.ceil((RESEND_COOLDOWN_IN_MS - sinceLastSentMs) / 1000);
-    return { otpRequired: true, resendAfterSeconds: Math.max(1, remainingSeconds) };
+  if (cooldownMs > 0) {
+    return { otpRequired: true, resendAfterSeconds: Math.max(1, Math.ceil(cooldownMs / 1000)) };
   }
 
-  const isStaleCounter = sinceLastSentMs === null || sinceLastSentMs >= OTP_LOCK_IN_MS;
-  await issueLoginOtp(user.id, user.email, isStaleCounter);
+  const isStaleCounter = lastSentAt === null || Date.now() - lastSentAt.getTime() >= OTP_LOCK_IN_MS;
+  const sent = await issueLoginOtp(user.id, user.email, isStaleCounter);
+  if (!sent) {
+    const latest = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { otpExpiresAt: true },
+    });
+    const latestSentAt = latest ? lastOtpSentAt(latest) : null;
+    const remainingMs = latestSentAt ? cooldownRemainingMs(latestSentAt) : 0;
+    return { otpRequired: true, resendAfterSeconds: Math.max(1, Math.ceil(remainingMs / 1000)) };
+  }
+
   return { otpRequired: true, resendAfterSeconds: RESEND_COOLDOWN_IN_SECONDS };
 }
 
@@ -248,14 +293,17 @@ export async function resendOtp(input: ResendOtpInput) {
     throw new AppError(400, "No pending login. Please log in again");
   }
 
-  const otpSentAt = user.otpExpiresAt.getTime() - OTP_EXPIRY_IN_MS;
-  const isCooldownActive = Date.now() - otpSentAt < RESEND_COOLDOWN_IN_MS;
-  if (isCooldownActive) {
+  const otpSentAt = lastOtpSentAt(user) as Date;
+  if (cooldownRemainingMs(otpSentAt) > 0) {
     throw new AppError(429, "Please wait before requesting a new code");
   }
 
   // attempts are not reset, otherwise resending would allow unlimited guesses without the password
-  await issueLoginOtp(user.id, user.email, false);
+  const sent = await issueLoginOtp(user.id, user.email, false);
+  if (!sent) {
+    throw new AppError(429, "Please wait before requesting a new code");
+  }
+
   return { resendAfterSeconds: RESEND_COOLDOWN_IN_SECONDS };
 }
 
